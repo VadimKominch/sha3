@@ -114,5 +114,5 @@ res_x <=res_y(0) when mod5result="000" else
       res_y(4) when mod5result="100" else
       res_y(0);
 write_data <= res_x;
-we_out <= second_round;
+we_out <= not second_round;
 end beh;

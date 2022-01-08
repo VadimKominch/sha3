@@ -34,26 +34,32 @@ type D_values is array (24 downto 0) of std_logic_vector(63 downto 0);
 
 signal D:D_values;
 signal x_addr,y_addr:std_logic_vector(2 downto 0);
-signal second_round:std_logic;
+signal second_round,we_shifted:std_logic;
 signal we,regwe:std_logic_vector(24 downto 0);
-signal op1,op2,op3:std_logic_vector(63 downto 0);
+signal op1,op2,op3,delay_read:std_logic_vector(63 downto 0);
 signal res_1,res_2,res_3:mux_out;
-signal op2x1,op2andop3:std_logic_vector(63 downto 0);
+signal op2x1,op2andop3,write_data_shifted,write_data_shifted2:std_logic_vector(63 downto 0);
+signal x_shifted,y_shifted: std_logic_vector(2 downto 0);
 
 begin
-  
-    x_addr_out <= x_addr;
-    y_addr_out <= y_addr;
+ 
+    x_addr_out <= y_addr when second_round='1' else x_addr;
+    y_addr_out <= x_addr when second_round='1' else y_addr;
     we_out <= not second_round;
-    addr : process( clk )
+    write_data <= write_data_shifted;
+
+    
+    -- need to process one clk period delay to send to block
+    buffer1:reg generic map(64) port map(read_data,clk,'0','1',delay_read);
+    
+    addr : process( clk,rst)
     begin
+      if( rising_edge(clk) )  then
       if( rst = '1' ) then
         x_addr <= (others=>'0');
         y_addr <= (others=>'0');
         second_round<='1';
-        we<="0000000000000000000000001";
-      elsif( rising_edge(clk) ) then
-        we<=we(23 downto 0) & we(24);
+      else 
         y_addr <= y_addr + 1;
         if(y_addr="100") then
             x_addr <= x_addr + 1;
@@ -64,12 +70,21 @@ begin
                 end if;
         end if;
       end if ;
+    end if;
+    end process ;
+  we_reg_sig:process( clk,rst)
+    begin
+      if( rst = '1' ) then
+        we<="0000000000000000000000001";
+      elsif( rising_edge(clk) ) then
+        we<=we(23 downto 0) & we(24);
+      end if ;
     end process ;
 
 
     D1 : for i in 0 to 24 generate
     regwe(i) <= second_round and we(i);
-    reg_d:reg generic map(64) port map(read_data,clk,rst,regwe(i),D(i));
+    reg_d:reg generic map(64) port map(read_data,clk,'0',regwe(i),D(i));
 end generate D1; -- identifier
 
 
@@ -128,5 +143,5 @@ not_gate:for i in 0 to 63 generate
 end generate not_gate;
   
     op2andop3<= op2x1 and op3;
-    write_data <= op1 xor op2andop3;
+    write_data_shifted <= op1 xor op2andop3;
 end beh;

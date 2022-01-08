@@ -18,7 +18,7 @@ architecture beh of reg is
 
 
 begin
-process(clk)
+process(clk,rst)
   begin
     if(rst='1') then
         output_data<= (others=>'0');

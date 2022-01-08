@@ -1,6 +1,7 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use ieee.std_logic_unsigned.all;
 
 entity i is
   port(
@@ -28,7 +29,8 @@ output_data:out std_logic_vector(WIDTH-1 downto 0)
 );
 end component;
 
-
+signal count:std_logic_vector(1 downto 0);
+signal write_data1:std_logic_vector(63 downto 0);
 type memory is array ( 0 to 23 ) of std_logic_vector( 63 downto 0 ) ;
 constant myrom : memory := (
 0=>x"0000000000000001",
@@ -59,12 +61,22 @@ signal shifted,rc_constant:std_logic_vector(63 downto 0);
 
 begin
   
-reg1:reg generic map(64) port map(read_data,clk,rst,'1',shifted);
+reg1:reg generic map(64) port map(read_data,clk,'0','1',shifted);
+reg2:reg generic map(64) port map(write_data1,clk,'0','1',write_data);
   process(clk)
     begin
       if(clk='1' and clk'event) then
     rc_constant <= myrom(to_integer(unsigned(ir)));
   end if;
   end process;
-  write_data<= shifted xor rc_constant;
+  we:process(clk,rst)
+  begin
+    if(rst='1') then
+      count<=(others=>'0');
+    elsif(rising_edge(clk)) then
+      count <= count +1;
+  end if;
+  end process;
+  write_data1<= shifted xor rc_constant;
+  we_out <= '1' when count ="10" else '0';
 end beh;

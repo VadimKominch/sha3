@@ -30,7 +30,7 @@ file file_RESULTS : text;
 begin
   
 clk <= not clk after 10 ns;
-rst <= '0','1' after 10 ns,'0' after 30 ns;
+rst <= '1' after 10 ns,'0' after 30 ns;
 
 read_data<=x"0000000000000007" after 10 ns,
            x"0000000000000006" after 30 ns,

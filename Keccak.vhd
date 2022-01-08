@@ -92,7 +92,7 @@ component psi
   );
 end component;
 
-type state is (waiting,preloading,loading,postloading,pre_teta,teta_state,post_teta_state,pre_p_state,p_state,post_p_state,pi_state,psi_state,i_state,finish);
+type state is (waiting,preloading,loading,postloading,pre_teta,teta_state,post_teta_state,pre_p_state,p_state,post_p_state,pre_pi_state,pi_state,post_pi_state,pre_psi_state,psi_state,post_psi_state,pre_i_state,i_state,post_i_state,finish);
 signal x_addr_p,y_addr_p:std_logic_vector(2 downto 0);
 signal x_addr_pi,y_addr_pi:std_logic_vector(2 downto 0);
 signal x_addr_teta,y_addr_teta:std_logic_vector(2 downto 0);
@@ -105,9 +105,11 @@ signal rst_p,rst_pi,rst_psi,rst_teta,rst_i:std_logic;
 signal ram_input,ram_output:std_logic_vector(63 downto 0);
 signal ram_input_p,ram_input_pi,ram_input_psi,ram_input_i,ram_input_teta:std_logic_vector(63 downto 0);
 signal ram_output_p,ram_output_pi,ram_output_psi,ram_output_i,ram_output_teta:std_logic_vector(63 downto 0);
-signal ir:std_logic_vector(4 downto 0);
+signal ir:std_logic_vector(4 downto 0); -- iteration number
 signal rc_counter:std_logic_vector(3 downto 0);
-file file_RESULTS : text;
+signal x_addr_psi_main, y_addr_psi_main: std_logic_vector(2 downto 0);
+
+
 begin
 
 process(clk)
@@ -120,7 +122,6 @@ if(rst='1') then
   rst_psi<='0';
   rst_teta<='0';
   rst_i<='0';
-  
 elsif(rising_edge(clk)) then
 case current is
 when waiting=>
@@ -160,20 +161,61 @@ when teta_state =>
   end if;
 when post_teta_state=>
   current <= pre_p_state;
+  rc_counter <= "0010";
+  --current <= waiting;
   
 when pre_p_state =>
   current <= p_state;
-  rc_counter <= "0010";
-  rst_p <= '1';
+   rst_p <= '1';
+ 
 when p_state => 
   rst_p <= '0';
-    if(x_addr="100" and y_addr="100") then
+    if(x_addr="001" and y_addr="001") then
     if(we='1') then
       current <= post_p_state;
   end if;
 end if;
 when post_p_state =>
+  current <= pre_pi_state;
+when pre_pi_state =>
   current <= pi_state;
+  rst_pi <= '1';
+  rc_counter <= "0011";
+when pi_state =>
+  rst_pi <='0';
+  if(x_addr="001" and y_addr="100") then
+    if(we='1') then
+      current <= post_pi_state;
+  end if;
+  end if;
+when post_pi_state =>
+  current <= pre_psi_state;
+  rst_psi <= '1';
+when pre_psi_state =>
+  rc_counter <= "0100";
+  current <= psi_state; 
+  rst_psi <= '0';
+when psi_state =>
+  if(x_addr="100" and y_addr="100") then
+    if(we='1') then
+      current <= post_psi_state;
+  end if;
+  end if;
+when post_psi_state =>
+  current <= pre_i_state;
+  rst_i <= '1';
+when pre_i_state =>
+  rc_counter <= "0101";
+  current <= i_state; 
+  rst_i <= '0';
+when i_state =>
+    if(we='1') then
+      current <= post_i_state;
+  end if;
+when post_i_state =>
+  current <= pre_teta;
+  rst_teta <='1';
+  ir <= ir +1;
 when others=> current <= waiting;
 end case;
 end if;
@@ -214,28 +256,5 @@ psi1:psi port map(ram_output,x_addr_psi,y_addr_psi,clk,rst_psi,we_psi,ram_input_
 pi1:pi port map(ram_output,x_addr_pi,y_addr_pi,clk,rst_pi,we_pi,ram_input_pi);
 teta1:teta port map(ram_output,x_addr_teta,y_addr_teta,clk,rst_teta,we_teta,ram_input_teta);
 i1:i port map(ram_output,ir,clk,rst_i,we_i,ram_input_i);
-
-process(clk)
-    variable v_OLINE     : line;
-   variable v_SPACE     : character:=' ';
-     
-  begin
- 
-    file_open(file_RESULTS, "output_results.txt", append_mode);
- 
-    if(rising_edge(clk)) then
-    if(we_p='1') then
- 
-      --write(v_OLINE, to_hex_string(write_data), right, 16);
-      write(v_OLINE , x_addr_p, right,3);
-      write(v_OLINE, v_SPACE,right,1);
-      write(v_OLINE , y_addr_p, right,3);
-      write(v_OLINE, v_SPACE,right,1);
-      hwrite(v_OLINE,ram_input_p);
-      writeline(file_RESULTS, v_OLINE);
-    end if;
- end if;
-    file_close(file_RESULTS);
-  end process;
 
 end architecture arch; -- arch

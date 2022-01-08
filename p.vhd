@@ -43,7 +43,7 @@ type addr_values is array (25 downto 0) of std_logic_vector(2 downto 0);
 signal DaddrX,DaddrY:addr_values;
 signal Dout:Dout_values;
 
-signal count:std_logic_vector(5 downto 0);
+signal count,scaler:std_logic_vector(5 downto 0);
 signal shift_t:std_logic_vector(5 downto 0);
 signal mod5result:std_logic_vector(2 downto 0);
 signal res_i,res_j:std_logic_vector(2 downto 0);
@@ -54,44 +54,38 @@ signal input_shift:std_logic_vector(7 downto 0);
 signal shifted_result,result:std_logic_vector(63 downto 0);
 signal second_round:std_logic;
 signal x_addr,y_addr:std_logic_vector(2 downto 0);
-
+signal isworked:std_logic; -- logic one if block is working now otherwise undefined or zero
 
 begin
     we_out <= second_round;
-counter_prescaler:process(clk)
+counter_prescaler:process(clk,rst)
 begin
 if(rst='1') then
-  count <= "000001";
+  count <= "000010";
   second_round <= '0';
-  x_addr <= (others=>'0');
-  y_addr <= (others=>'0');
-elsif(rising_edge(clk)) then
-	y_addr <= y_addr + 1;
-	if(y_addr="100") then
-	  y_addr <= (others=>'0');
-	  x_addr <= x_addr + 1; 
-	  if(x_addr="100") then
-	    x_addr <= (others=>'0');
-	    end if;
-	  end if;
-	  
+  isworked <= '1';
+elsif(rising_edge(clk)) then	  
 	count <= count + 1;     -- t is [0;23] 24 word change
-	if(count = "011001") then  -- 24 T clock to reset
+	if(count = "011000") then  -- 24 T clock to reset
 	  second_round <= '1';
 	  end if;
-	if(count = "110001") then
+	if(count = "110000") then
 	  second_round <='0';
-	  count <=(others=>'0');
+	  isworked <='0';
 	  end if;
 end if;
 end process;
 
-counter_next_number:process(clk)
+counter_next_number:process(clk,rst)
 begin
 if(rst='1') then
-  shift_t <= (others=>'0');
+  scaler <= "000010";
+  shift_t <= "000001";
 elsif(rising_edge(clk)) then
-	shift_t<=shift_t + count;
+  if(second_round='1') then
+	shift_t<=shift_t + scaler;
+	scaler <= scaler + 1;
+	end if;
 end if;
 end process;
 
@@ -127,24 +121,28 @@ mod5result <= "000" when sum="0000" else
         "000";
 
 input_shift<= "00" & shift_t;  
-shifter1:shifter port map(read_data,input_shift,result);
+shifter1:shifter port map(Dout(24),input_shift,result);
 
-Dout(0)<=result;
+--Dout(0)<=result;
+Dout(0) <=read_data;
 Dvalues : for i in 0 to 24 generate
-    reg_d:reg generic map(64) port map(Dout(i),clk,'0','1',Dout(i+1));
+    reg_d:reg generic map(64) port map(Dout(i),clk,'0',isworked,Dout(i+1));
 end generate Dvalues; -- identifier
 
-DaddrX(0)<=reg_x_out;
+--DaddrX(0)<=reg_x_out;
+DaddrX(0)<=x_mux_out;
 DaddrXout : for i in 0 to 24 generate
-    reg_x:reg generic map(3) port map(DaddrX(i),clk,'0','1',DaddrX(i+1));
+    reg_x:reg generic map(3) port map(DaddrX(i),clk,'0',isworked,DaddrX(i+1));
 end generate DaddrXout; -- identifier
 
-DaddrY(0)<=reg_y_out;
+--DaddrY(0)<=reg_y_out;
+DaddrY(0)<=y_mux_out;
 DaddrYout : for i in 0 to 24 generate
-    reg_y:reg generic map(3) port map(DaddrY(i),clk,'0','1',DaddrY(i+1));
+    reg_y:reg generic map(3) port map(DaddrY(i),clk,'0',isworked,DaddrY(i+1));
 end generate DaddrYout; -- identifier
 
-write_data <= Dout(25);
-x_addr_out <= x_addr when second_round='0' else DaddrX(25);  
-y_addr_out <= y_addr when second_round='0' else DaddrY(25);
+--write_data <= Dout(24);
+write_data <=result;
+x_addr_out <= x_mux_out when second_round='0' else DaddrX(24);  
+y_addr_out <= y_mux_out when second_round='0' else DaddrY(24);
 end beh;
