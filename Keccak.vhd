@@ -13,6 +13,7 @@ entity Keccak is
     clk:in std_logic;
     start:in std_logic;
     rst:in std_logic;
+	ready:out std_logic;
     output_data:out std_logic_vector(63 downto 0)
   ) ;
 end Keccak ;
@@ -92,23 +93,27 @@ component psi
   );
 end component;
 
-type state is (waiting,preloading,loading,postloading,pre_teta,teta_state,post_teta_state,pre_p_state,p_state,post_p_state,pre_pi_state,pi_state,post_pi_state,pre_psi_state,psi_state,post_psi_state,pre_i_state,i_state,post_i_state,finish);
+type state is (waiting,preloading,loading,postloading,pre_teta,teta_state,post_teta_state,pre_p_state,p_state,post_p_state,pre_pi_state,pi_state,post_pi_state,pre_psi_state,psi_state,post_psi_state,pre_i_state,i_state,post_i_state,grab_result,finish);
+signal current:state;
+
 signal x_addr_p,y_addr_p:std_logic_vector(2 downto 0);
 signal x_addr_pi,y_addr_pi:std_logic_vector(2 downto 0);
 signal x_addr_teta,y_addr_teta:std_logic_vector(2 downto 0);
 signal x_addr_psi,y_addr_psi:std_logic_vector(2 downto 0);
 signal x_addr_loading,y_addr_loading:std_logic_vector(2 downto 0);
-signal current:state;
 signal x_addr,y_addr:std_logic_vector(2 downto 0);
+signal x_grab,y_grab:std_logic_vector(2 downto 0);
+
 signal we,we_p,we_pi,we_psi,we_teta,we_i,finished:std_logic;
 signal rst_p,rst_pi,rst_psi,rst_teta,rst_i:std_logic;
 signal ram_input,ram_output:std_logic_vector(63 downto 0);
 signal ram_input_p,ram_input_pi,ram_input_psi,ram_input_i,ram_input_teta:std_logic_vector(63 downto 0);
 signal ram_output_p,ram_output_pi,ram_output_psi,ram_output_i,ram_output_teta:std_logic_vector(63 downto 0);
+
 signal ir:std_logic_vector(4 downto 0); -- iteration number
 signal rc_counter:std_logic_vector(3 downto 0);
 signal x_addr_psi_main, y_addr_psi_main: std_logic_vector(2 downto 0);
-
+signal result:std_logic_vector(1599 downto 0);
 
 begin
 
@@ -122,6 +127,7 @@ if(rst='1') then
   rst_psi<='0';
   rst_teta<='0';
   rst_i<='0';
+  ready <= '0';
 elsif(rising_edge(clk)) then
 case current is
 when waiting=>
@@ -205,7 +211,7 @@ when post_psi_state =>
   current <= pre_i_state;
   rst_i <= '1';
 when pre_i_state =>
-  rc_counter <= "0101";
+  rc_counter <= "0110";
   current <= i_state; 
   rst_i <= '0';
 when i_state =>
@@ -213,9 +219,29 @@ when i_state =>
       current <= post_i_state;
   end if;
 when post_i_state =>
-  current <= pre_teta;
   rst_teta <='1';
   ir <= ir +1;
+  if(ir="11000") then   -- if we pass all 24 iterations from main cycle
+	current <= grab_result;
+	rc_counter <= "0101";
+	x_grab<="000";
+	y_grab<="000";
+  else
+	current <= pre_teta;
+  end if;
+ when grab_result =>
+ result <= result(1535 downto 0) & ram_output;
+ y_grab <= y_grab +1;
+  if(y_grab = "100") then
+      x_grab <= x_grab +1;
+      y_grab <= (others=>'0');
+      if(x_grab = "100") then
+          x_grab <= (others=>'0');
+		  current <= finish;
+	end if;
+	end if;
+when finish =>
+	ready <= '1';
 when others=> current <= waiting;
 end case;
 end if;
@@ -233,13 +259,15 @@ x_addr <=	x_addr_loading when rc_counter ="0000" else
             x_addr_p when rc_counter = "0010" else
             x_addr_pi when rc_counter = "0011" else
             x_addr_psi when rc_counter = "0100" else
-            "000";
+            x_grab when rc_counter = "0101" else
+			"000";
             
 y_addr <=	y_addr_loading when rc_counter ="0000" else
 			       y_addr_teta when rc_counter = "0001" else
             y_addr_p when rc_counter = "0010" else
             y_addr_pi when rc_counter = "0011" else
             y_addr_psi when rc_counter = "0100" else
+			y_grab when rc_counter = "0101" else
             "000";
             
 we<= '1' when rc_counter = "0000" else

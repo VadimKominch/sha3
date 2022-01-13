@@ -1,76 +1,53 @@
 library ieee;
 use ieee.std_logic_1164.all;
+use ieee.std_logic_unsigned.all;
+use work.commons.all;
 
 entity Keccak_parallel is
   port(
-    input_word:in std_logic_vector(0 to 1599);
-  clk:in std_logic;
-  output_word:out std_logic_vector(0 to 1599));
+	input_word:in std_logic_vector(0 to 1599);
+	clk:in std_logic;
+	start:in std_logic;
+	finish:out std_logic;
+	output_word:out std_logic_vector(0 to 1599));
 end Keccak_parallel;
 
 architecture beh of Keccak_parallel is
-type rc_constants is array(0 to 23) of std_logic_vector(0 to 63);
-type p_subtype is array(0 to 24) of std_logic_vector(0 to 63);
-type p_constants is array (0 to 4,0 to 4) of integer; 
-type tda is array(0 to 4,0 to 4) of std_logic_vector(0 to 63); -- tda - two dimensional array
-type oda is array(0 to 4) of std_logic_vector(0 to 63); -- one dimensional array
-type iteration_signal is array (0 to 24) of tda;   --output signals
-signal initial1,initial,after_teta,after_p,after_p_reg,negative_words,after_pi,after_psi,after_i: tda;
-signal c,d: oda;
-signal num:integer:= 0;
-signal shifts:p_constants:=(( 0,  1, 62, 28, 27),
-                            (36, 44,  6, 55, 20),
-                            ( 3, 10, 43, 25, 39),
-                            (41, 45, 15, 21,  8),
-                            (18,  2, 61, 56, 14));
- signal pi_indexes:p_constants:=((0, 3, 1, 4, 2),
-                              (1, 4, 2, 0, 3),
-                              (2, 0, 3, 1, 4),
-                              (3, 1, 4, 2, 0),
-                              (4, 2, 0, 3, 1));                         
-signal RC:rc_constants:=(
-                        x"0000000000000001",
-                        x"0000000000008082",
-                        x"800000000000808A",
-                        x"8000000080008000",
-                        x"000000000000808B",
-                        x"0000000080000001",
-                        x"8000000080008081",
-                        x"8000000000008009",
-                        x"000000000000008A",
-                        x"0000000000000088",
-                        x"0000000080008009",
-                        x"000000008000000A",
-                        x"000000008000808B",
-                        x"800000000000008B",
-                        x"8000000000008089",
-                        x"8000000000008003",
-                        x"8000000000008002",
-                        x"8000000000000080",
-                        x"000000000000800A",
-                        x"800000008000000A",
-                        x"8000000080008081",
-                        x"8000000000008080",
-                        x"0000000080000001",
-                        x"8000000080008008");
-signal pi_words:p_subtype;
 
-component reg is
-generic(
-    WIDTH:integer
-);
+component Keccak_parallel_iteration
   port(
-    input_data:in std_logic_vector(WIDTH-1 downto 0);
-    clk:in std_logic;
-    rst:in std_logic;
-    we:in std_logic;
-    output_data:out std_logic_vector(WIDTH-1 downto 0)
-  );
+  initial:in tda;
+  clk:in std_logic;
+  num:in integer;
+  output_word:out tda);
 end component;
 
+type iteration_signal is array (0 to 25) of tda;   --output signals
+signal initial1,initial,output_be_array: tda;
+signal outputs: iteration_signal;
+signal output_state_word:std_logic_vector(0 to 1599);
+signal counter:std_logic_vector(6 downto 0);    -- 72=1001000     48=0110000   if iteration lasts 3 clock cycles - 72 if 2 - 48 
 
 begin
--- generate state array from 1600-bit vector and convert it endianness
+
+control_unit:process(clk)
+begin
+if(start='1') then
+	counter <= (others=>'0');
+	finish <= '0';
+elsif(rising_edge(clk)) then
+	if(counter="0110000") then
+		finish <= '1';
+	else
+		counter <= counter + 1;
+	end if;
+end if;
+end process;
+
+
+
+--input word to state array
+--also conversion from big endian notation to little endian 
 init_l1:for i in 0 to 4 generate
     init_l2:for j in 0 to 4 generate
 		init_z:for k in 0 to 63 generate
@@ -80,56 +57,23 @@ init_l1:for i in 0 to 4 generate
     end generate init_l2;
 end generate init_l1;
 
---TETA
-c1:for i in 0 to 4 generate
-    c(i) <= initial(0,i) xor initial(1,i) xor initial(2,i) xor initial(3,i) xor initial(4,i);
-end generate c1;
+outputs(0) <= initial;
 
-d1:for i in 0 to 4 generate
-  d(i) <= c((i-1) mod 5) xor (c((i+1) rem 5)(1 to 63)&c((i+1) rem 5)(0) );
-end generate d1;
+keccak_gate:for it in 0 to 24 generate
+	keccak:Keccak_parallel_iteration port map(outputs(it),clk,it,outputs(it+1));
+end generate keccak_gate; 
 
+--last outputs element contains all valid words for result array
+-- state array to to output word
+--outputs(25)
+out_l1:for i in 0 to 4 generate
+    out_l2:for j in 0 to 4 generate
+		out_z:for k in 0 to 63 generate
+			output_be_array(i,j) <= outputs(25)(i,j)(56 to 63)&outputs(25)(i,j)(48 to 55)&outputs(25)(i,j)(40 to 47)&outputs(25)(i,j)(32 to 39) & outputs(25)(i,j)(24 to 31) & outputs(25)(i,j)(16 to 23) & outputs(25)(i,j)(8 to 15) & outputs(25)(i,j)(0 to 7);
+			output_state_word(64*(5*i+j)+k) <= output_be_array(i,j)(k) ;
+		end generate out_z;
+    end generate out_l2;
+end generate out_l1;
 
-outer_teta_1:for i in 0 to 4 generate
-    outer_teta_2:for j in 0 to 4 generate
-        after_teta(i,j) <= initial(i,j) xor d(j);
-    end generate outer_teta_2;
-end generate outer_teta_1;
-
---P
-x_loop:for i in 0 to 4 generate
-    y_loop:for j in 0 to 4 generate
-    --set x and y as vars and change them every cycle to build
-    -- (t+1)*(t+2)/2 --shift right
-            reg1:reg generic map(64) port map(after_p(i,j),clk,'0','1',after_p_reg(i,j));
-            after_p(i,j) <= after_teta(i,j)(shifts(i,j) to 63)&after_teta(i,j)(0 to shifts(i,j)-1);
-            end generate y_loop;
-end generate x_loop;
---PI
-x_loop_pi:for i in 0 to 4 generate
-    y_loop_pi:for j in 0 to 4 generate
-            --assert pi_indexes(i,j) /= ((i+3*j) mod 5) report "("&integer'image(i)&" " & integer'image(j)&") ("&integer'image(((i+3*j) mod 5))&" "&integer'image(i)&")";
-
-            after_pi(j,i) <= after_p_reg(i,pi_indexes(i,j));
-            end generate y_loop_pi;
-end generate x_loop_pi;
---PSI
-x_loop_psi:for i in 0 to 4 generate
-    y_loop_psi:for j in 0 to 4 generate
-        negative_words(j,i) <= not after_pi(j,(i+1) rem 5);
-        after_psi(j,i) <= after_pi(j,i) xor (negative_words(j,i) and after_pi(j,(i+2) rem 5));
-    end generate y_loop_psi;
-end generate x_loop_psi;
---I
-x_loop_i:for i in 0 to 4 generate
-    y_loop_i:for j in 0 to 4 generate
-        first:if i = 0 and j = 0 generate
-            after_i(i,j) <= after_psi(i,j) xor RC(num);
-        end generate first;
-        second:if not((i = 0) and (j = 0)) generate
-            after_i(i,j) <= after_psi(i,j);
-        end generate second;
-    end generate y_loop_i;
-end generate x_loop_i;
-
+output_word <= output_state_word;
 end beh;
